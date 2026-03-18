@@ -1,0 +1,9 @@
+processed_data/
+trained_models/
+__pycache__/
+*.py[cod]
+*.pyo
+.DS_Store
+Thumbs.db
+results/combination_eval.json
+results/training_results.json
