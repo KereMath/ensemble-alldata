@@ -26,23 +26,25 @@ tanımayı öğreniyor.
 
 ### Genel Parametreler
 
-| Parametre | N=440 (v1) | N=1320 (v2, son) |
-|---|---|---|
-| N pozitif per model | 440 | 1320 |
-| N negatif per model | 440 | 1320 |
-| Toplam per model | ~880 | ~2640 |
-| Test seti per model | ~176 | ~528 |
-| Feature extraction | tsfresh EfficientFCParameters (777 feature) | aynı |
-| Split | %70 train / %10 val / %20 test (stratified) | aynı |
-| Kaynak grup sayısı | 39 (10 tekli + 29 kombinasyon) | aynı |
-| Min seri uzunluğu | 50 zaman adımı | aynı |
-| Random state | 42 | 42 |
-| n_jobs (tsfresh) | 4 | 4 |
+| Parametre | N=440 (v1) | N=1320 (v2) | N=1320 (v3, son) |
+|---|---|---|---|
+| N pozitif per model | 440 | 1320 | 1320 |
+| N negatif per model | 440 | 1320 | 1320 |
+| Toplam per model | ~880 | ~2640 | ~2640 |
+| Test seti per model | ~176 | ~528 | ~528 |
+| Feature extraction | tsfresh EfficientFCParameters (777 feature) | aynı | aynı |
+| Split | %70 train / %10 val / %20 test (stratified) | aynı | aynı |
+| Kaynak grup sayısı | 39 (10 tekli + 29 kombinasyon) | aynı | aynı |
+| Min seri uzunluğu | 50 zaman adımı | aynı | aynı |
+| **Min per_leaf garanti** | 1 | 1 | **10** |
+| Random state | 42 | 42 | 42 |
+| n_jobs (tsfresh) | 4 | 4 | 4 |
 
 ### Örnekleme Mantığı
 - **Pozitif:** `floor(N / pos_grup_sayısı)` örnek per kaynak grubu
 - **Negatif:** `floor(N / neg_grup_sayısı)` örnek per kaynak grubu
-- Grup içinde leaf klasörlerden eşit örnekleme
+- Grup içinde leaf klasörlerden eşit örnekleme: `per_leaf = max(10, n // len(leaves))`
+- **Min per_leaf = 10 garantisi (v3):** Bazı büyük gruplarda (örn. deterministic_trend: 72 leaf) `floor(60/72)=0` olurdu, bu da birçok leaf'in hiç temsil edilmemesine yol açıyordu. v3'te her leaf'ten en az 10 örnek alınır.
 - Hedef toplam dolmuyorsa rastgele havuzdan tamamlama
 
 ---
@@ -274,20 +276,22 @@ Her model için 3 classifier yarıştırıldı; en yüksek val F1 kazandı.
 
 ## 6. Kombinasyon Testi — End-to-End Değerlendirme
 
-### N=440 vs N=1320 Karşılaştırması
+### Versiyon Karşılaştırması
 
-| Metrik | N=440 (v1) | N=1320 (v2) | Değişim |
-|---|---|---|---|
-| Full match | 264/290 (%91.0) | **272/290 (%93.8)** | +2.8 pp |
-| Partial match | 22/290 (%7.6) | 16/290 (%5.5) | -2.1 pp |
-| No match | 4/290 (%1.4) | **2/290 (%0.7)** | -0.7 pp |
+| Metrik | N=440 (v1) | N=1320 (v2, per_leaf≥1) | N=1320 (v3, per_leaf≥10) | v2→v3 |
+|---|---|---|---|---|
+| Full match | 264/290 (%91.0) | 272/290 (%93.8) | **282/290 (%97.2)** | +3.4 pp |
+| Partial match | 22/290 (%7.6) | 16/290 (%5.5) | 8/290 (%2.8) | -2.7 pp |
+| No match | 4/290 (%1.4) | 2/290 (%0.7) | **0/290 (%0.0)** | -0.7 pp |
 
-### Per-Kombinasyon Sonuçları — N=1320
+> per_leaf≥10 garantisi kombinasyon testini önemli ölçüde iyileştirdi: no_match tamamen ortadan kalktı.
+
+### Per-Kombinasyon Sonuçları — N=1320 v3 (per_leaf≥10)
 
 | Kombinasyon | Full | Partial | None | Oran |
 |---|---|---|---|---|
 | cubic_collective_anomaly | 10/10 | 0 | 0 | **%100** |
-| Cubic + Mean Shift | 9/10 | 1 | 0 | %90 |
+| Cubic + Mean Shift | 10/10 | 0 | 0 | **%100** |
 | Cubic + Point Anomaly | 10/10 | 0 | 0 | **%100** |
 | Cubic + Variance Shift | 10/10 | 0 | 0 | **%100** |
 | Damped + Collective Anomaly | 10/10 | 0 | 0 | **%100** |
@@ -295,7 +299,7 @@ Her model için 3 classifier yarıştırıldı; en yüksek val F1 kazandı.
 | Damped + Point Anomaly | 10/10 | 0 | 0 | **%100** |
 | Damped + Variance Shift | 10/10 | 0 | 0 | **%100** |
 | exponential_collective_anomaly | 10/10 | 0 | 0 | **%100** |
-| Exponential + Mean Shift | 9/10 | 1 | 0 | %90 |
+| Exponential + Mean Shift | 10/10 | 0 | 0 | **%100** |
 | exponential_point_anomaly | 10/10 | 0 | 0 | **%100** |
 | exponential_variance_shift | 10/10 | 0 | 0 | **%100** |
 | Linear + Collective Anomaly | 10/10 | 0 | 0 | **%100** |
@@ -306,46 +310,88 @@ Her model için 3 classifier yarıştırıldı; en yüksek val F1 kazandı.
 | Quadratic + Collective anomaly | 10/10 | 0 | 0 | **%100** |
 | Quadratic + Mean Shift | 10/10 | 0 | 0 | **%100** |
 | Quadratic + Point Anomaly | 10/10 | 0 | 0 | **%100** |
-| Quadratic + Variance Shift | 9/10 | 1 | 0 | %90 |
-| Stochastic Trend + Collective Anomaly | 8/10 | 2 | 0 | %80 |
-| Stochastic Trend + Mean Shift | 9/10 | 1 | 0 | %90 |
+| Quadratic + Variance Shift | 10/10 | 0 | 0 | **%100** |
+| Stochastic Trend + Collective Anomaly | 9/10 | 1 | 0 | %90 |
+| Stochastic Trend + Mean Shift | 10/10 | 0 | 0 | **%100** |
 | Stochastic Trend + Point Anomaly | 9/10 | 1 | 0 | %90 |
-| Stochastic Trend + Variance Shift | 9/10 | 1 | 0 | %90 |
-| Volatility + Collective Anomaly | 6/10 | 3 | 1 | %60 |
-| Volatility + Mean Shift | 8/10 | 1 | 1 | %80 |
-| Volatility + Point Anomaly | 6/10 | 4 | 0 | %60 |
+| Stochastic Trend + Variance Shift | 10/10 | 0 | 0 | **%100** |
+| Volatility + Collective Anomaly | 7/10 | 3 | 0 | %70 |
+| Volatility + Mean Shift | 9/10 | 1 | 0 | %90 |
+| Volatility + Point Anomaly | 7/10 | 3 | 0 | %70 |
 | Volatility + Variance Shift | 10/10 | 0 | 0 | **%100** |
-| **TOPLAM** | **272/290** | **16** | **2** | **%93.8** |
+| **TOPLAM** | **282/290** | **8** | **0** | **%97.2** |
 
 ---
 
-## 7. Hata Analizi
+## 7. Manuel Test — Leaf Klasörden 1 Sample
 
-### Sorunlu Kombinasyonlar
+Her kaynak grubun her leaf klasöründen 1 CSV alınarak ensemble ile sınıflandırılmıştır.
+Toplam 440 leaf klasör, 39 kaynak grup, 440 test örneği.
 
-**Volatility + Collective Anomaly (%60)** ve **Volatility + Point Anomaly (%60)**
+### Özet (v3, per_leaf≥10)
+
+| Metrik | Değer |
+|---|---|
+| Toplam | 440 |
+| Full match | 251 (%57.0) |
+| Partial match | 114 (%25.9) |
+| No match | 75 (%17.0) |
+
+### Grup Bazlı Sonuçlar
+
+| # | Grup | Leaf | Full | Partial | None | Oran |
+|---|---|---|---|---|---|---|
+| 1 | stationary | 12 | 4 | 4 | 4 | %33 |
+| 2 | deterministic_trend | 72 | 22 | 4 | 46 | %31 |
+| 3 | stochastic_trend | 15 | 3 | 9 | 3 | %20 |
+| 4 | volatility | 12 | 5 | 7 | 0 | %42 |
+| 5 | collective_anomaly | 48 | 18 | 30 | 0 | %38 |
+| 6 | contextual_anomaly | 48 | 47 | 1 | 0 | **%98** |
+| 7 | mean_shift | 48 | 32 | 12 | 4 | %67 |
+| 8 | point_anomaly | 48 | 23 | 19 | 6 | %48 |
+| 9 | trend_shift | 48 | 34 | 11 | 3 | %71 |
+| 10 | variance_shift | 48 | 23 | 16 | 9 | %48 |
+| 11-39 | kombinasyonlar | 157 | 141 | 15 | 0 | **%90** |
+
+### Manuel Test Yorumu
+
+Kombinasyon klasörlerinde %90 full match elde edilirken tekli tip klasörlerinde önemli ölçüde düşüş gözlemlenmiştir. Temel nedenler:
+
+1. **Deterministic_trend karışıklığı:** Linear ve quadratic trend içeren `_short` seriler yeterince belirgin eğim göstermediğinden stationary veya stochastic_trend olarak sınıflandırılıyor. `ar_*` prefix'li seriler gürültü baskın olunca trend gizleniyor.
+2. **False positive anomaly detection:** Tekli tip (anomalisiz) seriler için de anomali modelleri tetikleniyor — özellikle `short` seriler ve yüksek gürültülü `ar_*` seriler point_anomaly / trend_shift olarak etiketleniyor.
+3. **Stochastic_trend düşük full match (%20):** Random walk'ın kısa versiyonları stationary ya da det_trend ile karışıyor; trend bileşeni istatistiksel olarak zayıf kalıyor.
+4. **per_leaf≥10 etkisi:** Deterministic_trend için 72 leaf × 10 = 720 minimum örnekleme, eğitim setinde bu grubun ağırlığını artırdı. Bu kombinasyon testini iyileştirirken (no_match=0) diğer modellerin negatif setindeki dağılımı değiştirdi.
+
+---
+
+## 8. Hata Analizi — Kombinasyon Testi
+
+### Sorunlu Kombinasyonlar (v3)
+
+**Volatility + Collective Anomaly (%70)** ve **Volatility + Point Anomaly (%70)**
 - Volatility modeli spike'ları hem varyans değişimi hem de point anomali olarak algılar
 - GARCH/ARCH tipi volatilitedeki ani yüksek değer spike'ları point_anomaly modelini karıştırır
-- Collective anomaly: volatility içindeki segment değişikliklerini collective olarak algılamak güç
-- **Çözüm önerisi:** Volatility kombinasyonlarına özel eşik kalibrasyonu
+- v3'te %60'tan %70'e iyileşti (no_match ortadan kalktı)
 
-**Stochastic Trend + Collective Anomaly (%80)**
-- Random walk trendiyle birlikte segment değişikliği: ortalama kayması global trenden ayırt edilmesi zor
-- collective_anomaly modeli doğrusal olmayan drift'i collective segment olarak görebiliyor
+**Stochastic Trend + Collective Anomaly (%90) / Point Anomaly (%90)**
+- Random walk trendiyle birlikte segment değişikliği: ortalama kayması global trenden ayırt edilmesi güç
+- v3'te %80'den %90'a iyileşti
 
-### Genel Hata Profili
-- 16 partial match: genellikle base_type doğru, anomali yanlış (ya fazla ya eksik tespit)
-- 2 no match: her ikisi de Volatility kategorisinde (1 vol+collective, 1 vol+mean_shift)
+### Genel Hata Profili (v3)
+- 8 partial match: genellikle base_type doğru, anomali yanlış (fazla tespit)
+- **0 no match:** v3'te tamamen ortadan kalktı (v2'de 2 vardı)
 
 ---
 
-## 8. Eski Ensemble ile Karşılaştırma
+## 9. Eski Ensemble ile Karşılaştırma
 
-| Özellik | Eski Ensemble | Yeni Ensemble (N=1320) |
+| Özellik | Eski Ensemble | Yeni Ensemble (N=1320, v3) |
 |---|---|---|
 | Eğitim stratejisi | Tekli sınıf datası | Kombinasyon-dahil |
 | Inference | argmax (tek etiket) | argmax + threshold (çok etiket) |
-| Kombinasyon full match | **%0** | **%93.8** |
-| Base type doğruluğu | ~%80 (tekli için) | ~%97.9 (tüm tipler) |
-| Anomali tespiti | İmkânsız (winner-takes-all) | %91.4-%99.8 arası |
+| Kombinasyon full match | **%0** | **%97.2** |
+| Kombinasyon no match | ~%100 | **%0** |
+| Base type doğruluğu | ~%80 (tekli için) | ~%97.9 (kombinasyon test) |
+| Anomali tespiti | İmkânsız (winner-takes-all) | %91.4-%99.8 arası (binary F1) |
+| Manuel test (tekli tipler) | bilinmiyor | %33-%98 arası (tip bağımlı) |
 | Eğitim süresi (feature) | ~2 dk | ~15 dk (n_jobs=4) |

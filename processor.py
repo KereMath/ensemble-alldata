@@ -47,8 +47,10 @@ def _get_leaf_csvs(root: Path) -> Dict[Path, List[Path]]:
 def sample_group(group_id: int, n: int) -> List[Path]:
     """
     Bir kaynak grubundan n CSV sec.
-    Leaf klasorler esit temsil edilir: floor(n / n_leaves) per leaf.
-    Kalan ornekler rastgele tamamlanir.
+    Faz 1: Her leaf klasorden en az 1 sample (kapsam garantisi).
+    Faz 2: Butce izin verdikce her leaften max(10, n//n_leaves) kadar topla.
+    Faz 3: Hala eksikse tum havuzdan rastgele tamamla.
+    Not: n < n_leaves ise shuffle+truncate ile dengeli kapsam saglanir.
     """
     leaf_map: Dict[Path, List[Path]] = {}
     for root in GROUP_PATHS[group_id]:
@@ -60,15 +62,39 @@ def sample_group(group_id: int, n: int) -> List[Path]:
         return []
 
     leaves = sorted(leaf_map.keys())
-    per_leaf = max(1, n // len(leaves))
+    per_leaf_max = max(10, n // len(leaves))
 
-    result: List[Path] = []
+    # Faz 1: Her leaften 1 sample al
+    phase1: List[Path] = []
+    leftover: Dict[Path, List[Path]] = {}
     for leaf in leaves:
         pool = sorted(leaf_map[leaf])
-        k = min(per_leaf, len(pool))
-        result.extend(random.sample(pool, k))
+        if pool:
+            chosen = random.choice(pool)
+            phase1.append(chosen)
+            leftover[leaf] = [f for f in pool if f != chosen]
+        else:
+            leftover[leaf] = []
 
-    # Hedefe ulasamamissa rastgele tamamla
+    # n < n_leaves: tum leafleri kapsamak mumkun degil, shuffle+kes
+    if len(phase1) >= n:
+        random.shuffle(phase1)
+        return phase1[:n]
+
+    # Faz 2: Butce bittikce her leaften per_leaf_max-1 kadar daha al
+    phase2: List[Path] = []
+    for leaf in leaves:
+        remaining_budget = n - len(phase1) - len(phase2)
+        if remaining_budget <= 0:
+            break
+        pool = leftover[leaf]
+        k = min(per_leaf_max - 1, len(pool), remaining_budget)
+        if k > 0:
+            phase2.extend(random.sample(pool, k))
+
+    result = phase1 + phase2
+
+    # Faz 3: Hala eksikse tum havuzdan tamamla
     if len(result) < n:
         all_csvs = [f for csvs in leaf_map.values() for f in csvs]
         already  = set(result)
@@ -77,6 +103,7 @@ def sample_group(group_id: int, n: int) -> List[Path]:
         if extra > 0:
             result.extend(random.sample(remaining, extra))
 
+    random.shuffle(result)
     return result[:n]
 
 

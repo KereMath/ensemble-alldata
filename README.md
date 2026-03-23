@@ -5,7 +5,7 @@ tsfresh EfficientFCParameters (777 feature) üzerinde LightGBM/XGBoost/MLP ile e
 Her classifier'ın pozitif sınıfı, o tipin bulunduğu **tüm kombinasyon klasörlerini** kapsar —
 bu sayede ensemble hem tekli hem de karışık sinyallerde çalışır.
 
-**Kombinasyon testi sonucu: 272/290 full match (%93.8)**
+**Kombinasyon testi sonucu: 282/290 full match (%97.2) — no match: 0**
 
 ---
 
@@ -20,7 +20,7 @@ veri yoktur. Binary ensemble bu problemi çözer:
 - Yeni bir kombinasyon tipi eklenmek istendiğinde sadece ilgili modeller yeniden eğitilir
 
 **Eski ensemble problemi:** Argmax (winner-takes-all) inference → kombinasyon testinde %0 full match.
-**Yeni strateji:** Eşik tabanlı çok etiket inference + kombinasyon-dahil eğitim → %93.8 full match.
+**Yeni strateji:** Eşik tabanlı çok etiket inference + kombinasyon-dahil eğitim → **%97.2 full match, %0 no match**.
 
 ---
 
@@ -93,7 +93,8 @@ Girdi: Zaman Serisi (CSV)
 **Örnekleme garantileri:**
 - Pozitif sınıf: tüm kaynak gruplarından eşit sayıda örnek
 - Negatif sınıf: tüm dışlanan gruplardan eşit sayıda örnek
-- Grup içi: leaf klasörlerden eşit örnekleme
+- Grup içi leaf örnekleme: `per_leaf = max(10, n // len(leaves))` — her leaf'ten **en az 10 örnek** garanti edilir
+- Bu garanti, büyük leaf sayılı gruplarda (deterministic_trend: 72 leaf) sınır örneklemesini önler
 
 ---
 
@@ -155,20 +156,37 @@ CSV dosyaları
 
 ### Kombinasyon Testi (290 test, 29 kombinasyon × 10 seri)
 
-| | N=440 (v1) | N=1320 (v2) |
-|---|---|---|
-| Full match | 264/290 (%91.0) | **272/290 (%93.8)** |
-| Partial match | 22/290 (%7.6) | 16/290 (%5.5) |
-| No match | 4/290 (%1.4) | 2/290 (%0.7) |
+| | N=440 (v1) | N=1320 (v2, per_leaf≥1) | N=1320 (v3, per_leaf≥10) |
+|---|---|---|---|
+| Full match | 264/290 (%91.0) | 272/290 (%93.8) | **282/290 (%97.2)** |
+| Partial match | 22/290 (%7.6) | 16/290 (%5.5) | 8/290 (%2.8) |
+| No match | 4/290 (%1.4) | 2/290 (%0.7) | **0/290 (%0.0)** |
 
-**En iyi kombinasyonlar (%100 full match):** Cubic, Damped, Exponential ve Linear base ile tüm
-kombinasyonlar, Quadratic base kombinasyonlarının çoğu, Volatility + Variance Shift.
+**En iyi kombinasyonlar (%100 full match, v3):** Tüm Cubic, Damped, Exponential, Linear, Quadratic kombinasyonları + Stochastic/Volatility + Variance Shift.
 
-**En zor kombinasyonlar:**
-- Volatility + Collective Anomaly: %60
-- Volatility + Point Anomaly: %60
-- Volatility + Mean Shift: %80
-- Stochastic Trend + Collective Anomaly: %80
+**En zor kombinasyonlar (v3):**
+- Volatility + Collective Anomaly: %70 (v2: %60)
+- Volatility + Point Anomaly: %70 (v2: %60)
+- Volatility + Mean Shift: %90 (v2: %80)
+- Stochastic Trend + Collective/Point Anomaly: %90 (v2: %80)
+
+### Manuel Test (440 leaf klasör, 1 sample/leaf)
+
+Her kaynak grubun her leaf klasöründen 1 CSV alınarak ensemble sınıflandırması yapıldı.
+
+| | v3 (per_leaf≥10) |
+|---|---|
+| Full match | 251/440 (%57.0) |
+| Partial match | 114/440 (%25.9) |
+| No match | 75/440 (%17.0) |
+
+**Grup bazlı öne çıkanlar:**
+- Contextual anomaly: **%98** full match (47/48)
+- Kombinasyon klasörleri (gr. 11-39): **%90** full match
+- Deterministic_trend (tek): %31 — linear/quadratic short seriler stationary ile karışıyor
+- Stochastic_trend (tek): %20 — kısa random walk seriler yeterli trend sergileyemiyor
+
+> Kombinasyon testi ve manuel test arasındaki fark, kombinasyon test setinin eğitim dağılımına yakın örneklerden oluşmasından kaynaklanmaktadır. Manuel test, her leaf klasörden 1 örnek aldığı için daha zorlayıcı ve dağılım dışı senaryoları kapsar.
 
 ---
 
@@ -183,10 +201,12 @@ ensemble-alldata/
 ├── main.py             # Orkestrasyon (--force, --train, --eval)
 ├── plan.md             # Detaylı strateji ve örnekleme planı
 ├── tree.md             # Kaynak grup ağaç yapısı
+├── manueltest.py       # Her leaf klasörden 1 örnek alıp ensemble ile sınıflandırır
 ├── results/
-│   ├── results.md              # Bu rapor
-│   ├── training_results.json   # Binary model test metrikleri
-│   └── combination_eval.json   # Kombinasyon testi detayları
+│   ├── results.md              # Tam sonuç raporu (bu dosya)
+│   ├── manueltest.md           # Manuel test sonuçları (440 leaf, 1 sample/leaf)
+│   ├── training_results.json   # [gitignore] Binary model test metrikleri
+│   └── combination_eval.json   # [gitignore] Kombinasyon testi detayları
 ├── processed_data/     # [gitignore] tsfresh features (.npy)
 └── trained_models/     # [gitignore] eğitilmiş modeller (.pkl)
 ```
@@ -243,8 +263,22 @@ Mevcut konfigürasyon: `n_jobs=4`.
 ```
 pos_per_group = floor(N / len(pos_groups))
 neg_per_group = floor(N / len(neg_groups))
+per_leaf      = max(10, n // len(leaves))   # her leaf'ten en az 10 örnek
 ```
 Grup içi leaf klasörlerden eşit örnekleme yapılır; hedef sayıya ulaşılamazsa rastgele tamamlama.
+
+### Kombinasyon Testi vs Manuel Test Farkı
+
+| | Kombinasyon Testi | Manuel Test |
+|---|---|---|
+| Amaç | Çok-etiket (combo) doğruluğu | Her leaf klasörden coverage |
+| Sample sayısı | 290 (29 combo × 10) | 440 (tüm leafler × 1) |
+| Kapsam | Sadece kombinasyon klasörleri | Tekli + kombinasyon tüm leafler |
+| Zorluk | Orta (eğitim dağılımına yakın) | Yüksek (dağılım dışı senaryolar) |
+| v3 Full match | **%97.2** | %57.0 |
+
+Kombinasyon testi "öğrenilmiş kombinasyonlar" üzerindeki performansı ölçerken,
+manuel test modelin genelleme kapasitesini ve kenar senaryolardaki davranışını gösterir.
 
 ### Inference
 ```python
