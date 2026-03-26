@@ -1,13 +1,14 @@
 """
-Manuel Test: Her kaynak grubun her leaf klasöründen 1 CSV al,
-ensemble ile classify et, beklenen vs tahmin edilen sonuçları göster.
-Çıktı: results/manueltest.md
+Manuel All-Data Test:
+Her kaynak grubun her leaf klasöründen en fazla SAMPLES_PER_LEAF (10) CSV al,
+ensemble ile classify et, sonuçları results/manuelalldatatest.md olarak yaz.
 """
 import sys
 import random
 import warnings
+from collections import defaultdict
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -25,55 +26,52 @@ from config import (
 warnings.filterwarnings("ignore")
 random.seed(RANDOM_STATE)
 
-# -------------------------------------------------------------------
-# Beklenen etiketler: group_id -> (base_type, [anomalies])
-# -------------------------------------------------------------------
+SAMPLES_PER_LEAF = 10   # her leaf klasörden max kaç CSV alınacak
+
+# Grup bazlı beklenen etiketler
 GROUP_EXPECTED = {
-    1:  ("stationary",         []),
-    2:  ("deterministic_trend",[]),
-    3:  ("stochastic_trend",   []),
-    4:  ("volatility",         []),
-    5:  ("stationary",         ["collective_anomaly"]),
-    6:  ("stationary",         ["contextual_anomaly"]),
-    7:  ("stationary",         ["mean_shift"]),
-    8:  ("stationary",         ["point_anomaly"]),
-    9:  ("stationary",         ["trend_shift"]),
-    10: ("stationary",         ["variance_shift"]),
-    11: ("deterministic_trend",["collective_anomaly"]),
-    12: ("deterministic_trend",["mean_shift"]),
-    13: ("deterministic_trend",["point_anomaly"]),
-    14: ("deterministic_trend",["variance_shift"]),
-    15: ("deterministic_trend",["collective_anomaly"]),
-    16: ("deterministic_trend",["mean_shift"]),
-    17: ("deterministic_trend",["point_anomaly"]),
-    18: ("deterministic_trend",["variance_shift"]),
-    19: ("deterministic_trend",["collective_anomaly"]),
-    20: ("deterministic_trend",["mean_shift"]),
-    21: ("deterministic_trend",["point_anomaly"]),
-    22: ("deterministic_trend",["variance_shift"]),
-    23: ("deterministic_trend",["collective_anomaly"]),
-    24: ("deterministic_trend",["mean_shift"]),
-    25: ("deterministic_trend",["point_anomaly"]),
-    26: ("deterministic_trend",["trend_shift"]),
-    27: ("deterministic_trend",["variance_shift"]),
-    28: ("deterministic_trend",["collective_anomaly"]),
-    29: ("deterministic_trend",["mean_shift"]),
-    30: ("deterministic_trend",["point_anomaly"]),
-    31: ("deterministic_trend",["variance_shift"]),
-    32: ("stochastic_trend",   ["collective_anomaly"]),
-    33: ("stochastic_trend",   ["mean_shift"]),
-    34: ("stochastic_trend",   ["point_anomaly"]),
-    35: ("stochastic_trend",   ["variance_shift"]),
-    36: ("volatility",         ["collective_anomaly"]),
-    37: ("volatility",         ["mean_shift"]),
-    38: ("volatility",         ["point_anomaly"]),
-    39: ("volatility",         ["variance_shift"]),
+    1:  ("stationary",          []),
+    2:  ("deterministic_trend", []),
+    3:  ("stochastic_trend",    []),
+    4:  ("volatility",          []),
+    5:  ("stationary",          ["collective_anomaly"]),
+    6:  ("stationary",          ["contextual_anomaly"]),
+    7:  ("stationary",          ["mean_shift"]),
+    8:  ("stationary",          ["point_anomaly"]),
+    9:  ("stationary",          ["trend_shift"]),
+    10: ("stationary",          ["variance_shift"]),
+    11: ("deterministic_trend", ["collective_anomaly"]),
+    12: ("deterministic_trend", ["mean_shift"]),
+    13: ("deterministic_trend", ["point_anomaly"]),
+    14: ("deterministic_trend", ["variance_shift"]),
+    15: ("deterministic_trend", ["collective_anomaly"]),
+    16: ("deterministic_trend", ["mean_shift"]),
+    17: ("deterministic_trend", ["point_anomaly"]),
+    18: ("deterministic_trend", ["variance_shift"]),
+    19: ("deterministic_trend", ["collective_anomaly"]),
+    20: ("deterministic_trend", ["mean_shift"]),
+    21: ("deterministic_trend", ["point_anomaly"]),
+    22: ("deterministic_trend", ["variance_shift"]),
+    23: ("deterministic_trend", ["collective_anomaly"]),
+    24: ("deterministic_trend", ["mean_shift"]),
+    25: ("deterministic_trend", ["point_anomaly"]),
+    26: ("deterministic_trend", ["trend_shift"]),
+    27: ("deterministic_trend", ["variance_shift"]),
+    28: ("deterministic_trend", ["collective_anomaly"]),
+    29: ("deterministic_trend", ["mean_shift"]),
+    30: ("deterministic_trend", ["point_anomaly"]),
+    31: ("deterministic_trend", ["variance_shift"]),
+    32: ("stochastic_trend",    ["collective_anomaly"]),
+    33: ("stochastic_trend",    ["mean_shift"]),
+    34: ("stochastic_trend",    ["point_anomaly"]),
+    35: ("stochastic_trend",    ["variance_shift"]),
+    36: ("volatility",          ["collective_anomaly"]),
+    37: ("volatility",          ["mean_shift"]),
+    38: ("volatility",          ["point_anomaly"]),
+    39: ("volatility",          ["variance_shift"]),
 }
 
 
-# -------------------------------------------------------------------
-# Yardımcı fonksiyonlar
-# -------------------------------------------------------------------
 def get_leaf_csvs(root: Path) -> Dict[Path, List[Path]]:
     leaf_map: Dict[Path, List[Path]] = {}
     for f in root.rglob("*.csv"):
@@ -116,8 +114,7 @@ def extract_batch(series_list: List[np.ndarray]) -> np.ndarray:
 def load_models() -> Dict:
     models = {}
     for name in ALL_MODEL_NAMES:
-        path = MODELS_DIR / f"{name}.pkl"
-        bundle = joblib.load(path)
+        bundle = joblib.load(MODELS_DIR / f"{name}.pkl")
         models[name] = bundle
     return models
 
@@ -142,7 +139,6 @@ def decode(probs: Dict[str, float]) -> Tuple[str, List[str]]:
 def match_type(true_base, true_anomalies, pred_base, pred_anomalies) -> str:
     base_ok = pred_base == true_base
     if not true_anomalies:
-        # Tekli: anomaly olmamalı
         anom_ok = len(pred_anomalies) == 0
     else:
         anom_ok = all(a in pred_anomalies for a in true_anomalies)
@@ -153,16 +149,13 @@ def match_type(true_base, true_anomalies, pred_base, pred_anomalies) -> str:
     return "NONE"
 
 
-# -------------------------------------------------------------------
-# Ana test
-# -------------------------------------------------------------------
 def main():
     print("Modeller yükleniyor...")
     models = load_models()
     print(f"  {len(models)} model yüklendi.\n")
 
-    # Her grup için: leaf -> 1 CSV topla
-    all_samples = []  # (group_id, group_name, leaf_path, csv_path, true_base, true_anomalies)
+    # Her grup, her leaf'ten SAMPLES_PER_LEAF CSV topla
+    all_samples = []
 
     print("Leaf klasörler taranıyor...")
     for gid, gname, roots in SOURCE_GROUPS:
@@ -176,25 +169,27 @@ def main():
                 valid = [c for c in csvs if c.name != "metadata.csv"]
                 if not valid:
                     continue
-                chosen = random.choice(valid)
-                all_samples.append((gid, gname, leaf, chosen, true_base, true_anomalies))
+                k = min(SAMPLES_PER_LEAF, len(valid))
+                chosen = random.sample(valid, k)
+                for csv_path in chosen:
+                    all_samples.append((gid, gname, leaf, csv_path, true_base, true_anomalies))
 
-    print(f"  Toplam: {len(all_samples)} leaf klasör, {len(all_samples)} sample\n")
+    print(f"  Toplam: {len(all_samples)} sample (max {SAMPLES_PER_LEAF}/leaf)\n")
 
     # Batch feature extraction
     print("tsfresh feature extraction (batch)...")
     series_list = []
     valid_samples = []
+    skipped = 0
     for item in all_samples:
-        gid, gname, leaf, csv_path, tb, ta = item
-        data = read_series(csv_path)
+        data = read_series(item[3])
         if len(data) >= MIN_SERIES_LENGTH:
             series_list.append(data)
             valid_samples.append(item)
         else:
-            print(f"  [SKIP] Kısa seri: {csv_path}")
+            skipped += 1
 
-    print(f"  {len(series_list)} seri extract ediliyor...")
+    print(f"  {len(series_list)} seri extract ediliyor (atlandı: {skipped})...")
     X_all = extract_batch(series_list)
     print(f"  Tamamlandı: {X_all.shape}\n")
 
@@ -212,30 +207,29 @@ def main():
             "probs": probs, "match": match,
         })
 
-    # İstatistik
     total   = len(results)
     full    = sum(1 for r in results if r["match"] == "FULL")
     partial = sum(1 for r in results if r["match"] == "PARTIAL")
     none    = sum(1 for r in results if r["match"] == "NONE")
-    print(f"  FULL: {full}/{total} ({100*full/total:.1f}%)")
+    print(f"  FULL:    {full}/{total} ({100*full/total:.1f}%)")
     print(f"  PARTIAL: {partial}/{total} ({100*partial/total:.1f}%)")
-    print(f"  NONE: {none}/{total} ({100*none/total:.1f}%)\n")
+    print(f"  NONE:    {none}/{total} ({100*none/total:.1f}%)\n")
 
-    # Markdown raporu oluştur
     generate_md(results, total, full, partial, none)
-    print("Rapor: results/manueltest.md")
+    print("Rapor: results/manuelalldatatest.md")
 
 
 def generate_md(results, total, full, partial, none):
     lines = []
-    lines.append("# Manuel Test — Tüm Leaf Klasörlerden 1 Sample")
+    lines.append("# Manuel All-Data Test")
     lines.append("")
-    lines.append("Her kaynak grubun her leaf klasöründen 1 rastgele CSV alınıp ensemble ile sınıflandırılmıştır.")
+    lines.append(f"Her kaynak grubunun her leaf klasöründen en fazla {SAMPLES_PER_LEAF} CSV alınarak")
+    lines.append("ensemble ile sınıflandırılmıştır.")
     lines.append("")
     lines.append("## Özet")
     lines.append("")
-    lines.append(f"| Metrik | Değer |")
-    lines.append(f"|---|---|")
+    lines.append("| Metrik | Değer |")
+    lines.append("|---|---|")
     lines.append(f"| Toplam test | {total} |")
     lines.append(f"| Full match | {full} ({100*full/total:.1f}%) |")
     lines.append(f"| Partial match | {partial} ({100*partial/total:.1f}%) |")
@@ -243,30 +237,29 @@ def generate_md(results, total, full, partial, none):
     lines.append("")
 
     # Grup bazlı özet
-    lines.append("## Grup Bazlı Özet")
-    lines.append("")
-    lines.append("| # | Grup | Beklenen | Leaf | Full | Partial | None |")
-    lines.append("|---|---|---|---|---|---|---|")
-
-    from collections import defaultdict
     group_stats = defaultdict(lambda: {"full": 0, "partial": 0, "none": 0, "total": 0,
                                         "gname": "", "true_base": "", "true_anom": []})
     for r in results:
         g = r["gid"]
-        group_stats[g]["gname"] = r["gname"]
+        group_stats[g]["gname"]     = r["gname"]
         group_stats[g]["true_base"] = r["true_base"]
         group_stats[g]["true_anom"] = r["true_anomalies"]
-        group_stats[g]["total"] += 1
+        group_stats[g]["total"]     += 1
         group_stats[g][r["match"].lower()] += 1
 
+    lines.append("## Grup Bazlı Özet")
+    lines.append("")
+    lines.append("| # | Grup | Beklenen | Örnek | Full | Partial | None | Full% |")
+    lines.append("|---|---|---|---|---|---|---|---|")
     for gid in sorted(group_stats.keys()):
         s = group_stats[gid]
         expected = s["true_base"]
         if s["true_anom"]:
-            expected += " + " + ", ".join(s["true_anom"])
+            expected += " + " + " + ".join(s["true_anom"])
+        pct = 100 * s["full"] / s["total"] if s["total"] else 0
         lines.append(
             f"| {gid} | {s['gname']} | {expected} | {s['total']} | "
-            f"{s['full']} | {s['partial']} | {s['none']} |"
+            f"{s['full']} | {s['partial']} | {s['none']} | %{pct:.0f} |"
         )
     lines.append("")
 
@@ -278,35 +271,31 @@ def generate_md(results, total, full, partial, none):
             expected_str = r["true_base"]
             if r["true_anomalies"]:
                 expected_str += " + " + " + ".join(r["true_anomalies"])
-            lines.append(f"---")
-            lines.append(f"")
+            lines.append("---")
+            lines.append("")
             lines.append(f"## Grup {r['gid']}: {r['gname']}")
             lines.append(f"**Beklenen:** `{expected_str}`")
             lines.append("")
-            lines.append("| Leaf Klasör | CSV | Beklenen | Tahmin | Sonuç |")
-            lines.append("|---|---|---|---|---|")
+            lines.append("| Leaf | CSV | Tahmin | Sonuç |")
+            lines.append("|---|---|---|---|")
 
         pred_str = r["pred_base"]
         if r["pred_anomalies"]:
             pred_str += " + " + " + ".join(sorted(r["pred_anomalies"]))
 
-        exp_str = r["true_base"]
-        if r["true_anomalies"]:
-            exp_str += " + " + " + ".join(r["true_anomalies"])
-
         leaf_short = r["leaf"].name
         csv_short  = r["csv"].name
         icon = {"FULL": "✓", "PARTIAL": "~", "NONE": "✗"}[r["match"]]
-        lines.append(f"| `{leaf_short}` | `{csv_short}` | `{exp_str}` | `{pred_str}` | {icon} {r['match']} |")
+        lines.append(f"| `{leaf_short}` | `{csv_short}` | `{pred_str}` | {icon} {r['match']} |")
 
+    # Hata olasılıkları
     lines.append("")
     lines.append("---")
     lines.append("")
     lines.append("## Model Olasılıkları — Sadece Hatalı Örnekler")
     lines.append("")
-    lines.append("| Grup | CSV | stationary | det_trend | stoch_trend | volatility | collective | contextual | mean_shift | point | trend_shift | var_shift | Sonuç |")
+    lines.append("| Grup | CSV | stat | det | stoch | vol | coll | ctx | mean | point | trend | var | Sonuç |")
     lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
-
     for r in results:
         if r["match"] != "FULL":
             p = r["probs"]
@@ -321,7 +310,7 @@ def generate_md(results, total, full, partial, none):
             )
 
     RESULTS_DIR.mkdir(exist_ok=True)
-    out_path = RESULTS_DIR / "manueltest.md"
+    out_path = RESULTS_DIR / "manuelalldatatest.md"
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
