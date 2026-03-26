@@ -8,16 +8,6 @@ karışık sinyallerde doğru sınıflandırma yapabilir.
 
 ---
 
-## Özet Sonuçlar
-
-| Test | Full match | Partial | No match |
-|---|---|---|---|
-| Kombinasyon testi (v3, 290 örnek) | **282/290 (%97.2)** | 8/290 (%2.8) | **0/290 (%0.0)** |
-| Manuel test (440 leaf klasör, 1 örnek/leaf) | 251/440 (%57.0) | 114/440 (%25.9) | 75/440 (%17.0) |
-| Ortalama binary F1 (test seti) | **0.9522** | — | — |
-
----
-
 ## İçindekiler
 
 1. [Motivasyon ve Algoritma Evrimi](#1-motivasyon-ve-algoritma-evrimi)
@@ -29,9 +19,16 @@ karışık sinyallerde doğru sınıflandırma yapabilir.
 7. [Binary Model Sonuçları](#7-binary-model-sonuçları)
 8. [Inference Mekanizması](#8-inference-mekanizması)
 9. [Kombinasyon Testi — Detaylı Sonuçlar](#9-kombinasyon-testi--detaylı-sonuçlar)
-10. [Manuel Test — Tüm Leaf Klasörler](#10-manuel-test--tüm-leaf-klasörler)
-11. [Hata Analizi](#11-hata-analizi)
-12. [Proje Yapısı ve Kurulum](#12-proje-yapısı-ve-kurulum)
+
+---
+
+## Özet Sonuçlar
+
+| Test | Full match | Partial | No match |
+|---|---|---|---|
+| Kombinasyon testi (v3, 290 örnek) | **282/290 (%97.2)** | 8/290 (%2.8) | **0/290 (%0.0)** |
+| Manuel test (440 leaf klasör, 1 örnek/leaf) | 251/440 (%57.0) | 114/440 (%25.9) | 75/440 (%17.0) |
+| Ortalama binary F1 (test seti) | **0.9522** | — | — |
 
 ---
 
